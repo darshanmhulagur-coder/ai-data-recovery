@@ -262,6 +262,59 @@ def triage_content(req: TriageRequest):
         "integrity": integrity
     }
 
+import zipfile
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+@app.get("/api/samples/{filename}")
+def download_sample_file(filename: str):
+    """Allows investigators to download sample corrupted/raw evidence files."""
+    safe_name = os.path.basename(filename)
+    candidates = [
+        os.path.join(ROOT_DIR, safe_name),
+        os.path.join(ROOT_DIR, "sample_fragments", safe_name)
+    ]
+    for path in candidates:
+        if os.path.exists(path) and os.path.isfile(path):
+            return FileResponse(
+                path,
+                filename=safe_name,
+                media_type="application/octet-stream",
+                headers={"Content-Disposition": f'attachment; filename="{safe_name}"'}
+            )
+    raise HTTPException(status_code=404, detail="Sample evidence file not found")
+
+@app.get("/api/download-all-samples")
+def download_all_samples():
+    """Generates an in-memory zip archive with all evidence samples for 1-click download."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zipf:
+        sample_files = [
+            "evidence_disk_stream.raw",
+            "corrupted_dvr_capture.bin",
+            "broken_surveillance_photo.bin",
+            "corrupted_ledger.db",
+            "corrupted_traffic_camera.bin"
+        ]
+        for f in sample_files:
+            p = os.path.join(ROOT_DIR, f)
+            if os.path.exists(p):
+                zipf.write(p, arcname=f"1_Upload_File_Disk_Stream/{f}")
+                zipf.write(p, arcname=f"2_Corrupted_Header_Repair/{f}")
+
+        frag_dir = os.path.join(ROOT_DIR, "sample_fragments")
+        if os.path.exists(frag_dir):
+            for f in os.listdir(frag_dir):
+                fp = os.path.join(frag_dir, f)
+                if os.path.isfile(fp):
+                    zipf.write(fp, arcname=f"3_Fragment_Chunks/{f}")
+
+    buf.seek(0)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="ForensiX_Evidence_Samples.zip"'}
+    )
+
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 

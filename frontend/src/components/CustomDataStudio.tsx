@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
-import { Upload, Plus, Trash2, FileText, Wrench, Sparkles, FolderUp, CheckCircle2, FileUp, RotateCcw } from 'lucide-react';
+import { Upload, Plus, Trash2, FileText, Wrench, Sparkles, FolderUp, CheckCircle2, FileUp, RotateCcw, Download, FolderArchive, FileCode } from 'lucide-react';
 import type { FragmentItem } from '../types';
+
+const API_BASE = import.meta.env.VITE_API_BASE !== undefined
+  ? import.meta.env.VITE_API_BASE
+  : (typeof window !== 'undefined' && window.location.port === '5173' ? 'http://127.0.0.1:8000' : '');
 
 interface CustomDataStudioProps {
   onCustomFileUpload: (file: File) => void;
@@ -31,6 +35,33 @@ export const CustomDataStudio: React.FC<CustomDataStudioProps> = ({
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const multiFileInputRef = React.useRef<HTMLInputElement>(null);
   const repairFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleLoadPreloadedEvidence = async (filename: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/samples/${filename}`);
+      if (res.ok) {
+        const blob = await res.blob();
+        const file = new File([blob], filename);
+        setUploadedFile(file);
+        onCustomFileUpload(file);
+      }
+    } catch (e) {
+      console.error("Failed to load sample evidence", e);
+    }
+  };
+
+  const handleLoadPreloadedRepair = async (filename: string, formatHint: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/samples/${filename}`);
+      if (res.ok) {
+        const blob = await res.blob();
+        const file = new File([blob], filename);
+        onCustomRepairRequest(file, formatHint);
+      }
+    } catch (e) {
+      console.error("Failed to load sample repair", e);
+    }
+  };
 
   const handleAddFragment = () => {
     const nextNum = userFragments.length + 1;
@@ -253,6 +284,168 @@ export const CustomDataStudio: React.FC<CustomDataStudioProps> = ({
               </button>
             </div>
           )}
+
+          {/* Sample Evidence Files Download & Quick Test Bar */}
+          <div className="rounded-xl border border-violet-500/20 bg-[#0d0d1a]/90 p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700/40 pb-2.5">
+              <div className="flex items-center gap-2">
+                <Download className="w-4 h-4 text-cyan-400" />
+                <span className="text-xs font-bold text-slate-200 font-mono">
+                  Sample Evidence Files for Disk Stream Upload:
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950/60 text-cyan-300 border border-cyan-500/30 font-mono">
+                  Ready to Download & Test
+                </span>
+              </div>
+              <a
+                href={`${API_BASE}/api/download-all-samples`}
+                download="ForensiX_Evidence_Samples.zip"
+                className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-cyan-950/70 hover:bg-cyan-900/80 text-cyan-300 border border-cyan-500/30 text-[11px] font-mono transition-colors"
+                title="Download complete ZIP archive containing all sample evidence files"
+              >
+                <FolderArchive className="w-3.5 h-3.5" />
+                <span>Download All (.ZIP)</span>
+              </a>
+            </div>
+
+            <p className="text-[11px] text-slate-400 font-mono">
+              Click <strong>"Download"</strong> to save to your PC and upload, or click <strong>"Load Directly"</strong> to scan instantly:
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {/* Card 1: Raw Disk Stream */}
+              <div className="p-3 rounded-lg bg-[#12122a] border border-slate-700/40 hover:border-cyan-500/40 transition-all flex flex-col justify-between space-y-2">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-cyan-300 font-mono truncate" title="evidence_disk_stream.raw">
+                      evidence_disk_stream.raw
+                    </span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">8.4 KB</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1 line-clamp-2">
+                    Multi-sector raw disk dump: corrupted PNG, slack space, and extortion chat log.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 pt-1">
+                  <a
+                    href={`${API_BASE}/api/samples/evidence_disk_stream.raw`}
+                    download="evidence_disk_stream.raw"
+                    className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono transition-colors"
+                  >
+                    <Download className="w-3 h-3 text-cyan-400" />
+                    <span>Download</span>
+                  </a>
+                  <button
+                    onClick={() => handleLoadPreloadedEvidence('evidence_disk_stream.raw')}
+                    disabled={isLoading}
+                    className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-cyan-600/80 hover:bg-cyan-500 text-white text-[10px] font-mono font-semibold transition-colors cursor-pointer"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>Load</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Card 2: DVR Stream */}
+              <div className="p-3 rounded-lg bg-[#12122a] border border-slate-700/40 hover:border-cyan-500/40 transition-all flex flex-col justify-between space-y-2">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-cyan-300 font-mono truncate" title="corrupted_dvr_capture.bin">
+                      corrupted_dvr_capture.bin
+                    </span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">6.3 KB</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1 line-clamp-2">
+                    Damaged DVR surveillance stream with corrupted JPEG SOI & motion alerts.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 pt-1">
+                  <a
+                    href={`${API_BASE}/api/samples/corrupted_dvr_capture.bin`}
+                    download="corrupted_dvr_capture.bin"
+                    className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono transition-colors"
+                  >
+                    <Download className="w-3 h-3 text-cyan-400" />
+                    <span>Download</span>
+                  </a>
+                  <button
+                    onClick={() => handleLoadPreloadedEvidence('corrupted_dvr_capture.bin')}
+                    disabled={isLoading}
+                    className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-cyan-600/80 hover:bg-cyan-500 text-white text-[10px] font-mono font-semibold transition-colors cursor-pointer"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>Load</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Card 3: Broken Surveillance */}
+              <div className="p-3 rounded-lg bg-[#12122a] border border-slate-700/40 hover:border-cyan-500/40 transition-all flex flex-col justify-between space-y-2">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-cyan-300 font-mono truncate" title="broken_surveillance_photo.bin">
+                      broken_surveillance_photo.bin
+                    </span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">21.9 KB</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1 line-clamp-2">
+                    CCTV crime-scene photo with zeroed magic header & IDAT payload intact.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 pt-1">
+                  <a
+                    href={`${API_BASE}/api/samples/broken_surveillance_photo.bin`}
+                    download="broken_surveillance_photo.bin"
+                    className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono transition-colors"
+                  >
+                    <Download className="w-3 h-3 text-cyan-400" />
+                    <span>Download</span>
+                  </a>
+                  <button
+                    onClick={() => handleLoadPreloadedEvidence('broken_surveillance_photo.bin')}
+                    disabled={isLoading}
+                    className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-cyan-600/80 hover:bg-cyan-500 text-white text-[10px] font-mono font-semibold transition-colors cursor-pointer"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>Load</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Card 4: SQLite Database */}
+              <div className="p-3 rounded-lg bg-[#12122a] border border-slate-700/40 hover:border-cyan-500/40 transition-all flex flex-col justify-between space-y-2">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-cyan-300 font-mono truncate" title="corrupted_ledger.db">
+                      corrupted_ledger.db
+                    </span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">8.2 KB</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1 line-clamp-2">
+                    Damaged SQLite financial ledger database with wiped 100B header.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 pt-1">
+                  <a
+                    href={`${API_BASE}/api/samples/corrupted_ledger.db`}
+                    download="corrupted_ledger.db"
+                    className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono transition-colors"
+                  >
+                    <Download className="w-3 h-3 text-cyan-400" />
+                    <span>Download</span>
+                  </a>
+                  <button
+                    onClick={() => handleLoadPreloadedEvidence('corrupted_ledger.db')}
+                    disabled={isLoading}
+                    className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-cyan-600/80 hover:bg-cyan-500 text-white text-[10px] font-mono font-semibold transition-colors cursor-pointer"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>Load</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -471,6 +664,134 @@ export const CustomDataStudio: React.FC<CustomDataStudioProps> = ({
                 }
               }}
             />
+
+            {/* Sample Corrupted Header Files Download & Repair Bar */}
+            <div className="rounded-xl border border-emerald-500/20 bg-[#0d0d1a]/90 p-4 space-y-3 mt-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700/40 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <Wrench className="w-4 h-4 text-[#39ff14]" />
+                  <span className="text-xs font-bold text-slate-200 font-mono">
+                    Sample Corrupted Header Files for AI Reconstruction:
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/60 text-[#39ff14] border border-emerald-500/30 font-mono">
+                    3 Specifications Available
+                  </span>
+                </div>
+                <a
+                  href={`${API_BASE}/api/download-all-samples`}
+                  download="ForensiX_Evidence_Samples.zip"
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-950/70 hover:bg-emerald-900/80 text-[#39ff14] border border-emerald-500/30 text-[11px] font-mono transition-colors"
+                >
+                  <FolderArchive className="w-3.5 h-3.5" />
+                  <span>Download All (.ZIP)</span>
+                </a>
+              </div>
+
+              <p className="text-[11px] text-slate-400 font-mono">
+                Click <strong>"Download"</strong> to save the raw damaged file, or click <strong>"Repair Directly"</strong> to synthesize headers and preview the restored artifact immediately:
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Header Sample 1: PNG */}
+                <div className="p-3.5 rounded-lg bg-[#12122a] border border-slate-700/40 hover:border-emerald-500/40 transition-all flex flex-col justify-between space-y-2.5">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#39ff14] font-mono truncate" title="broken_surveillance_photo.bin">
+                        broken_surveillance_photo.bin
+                      </span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 font-mono font-semibold">PNG SPEC</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                      PNG magic signature &amp; 25-byte IHDR chunk wiped with zeros. AI regenerates valid RFC 2083 container + CRC32.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <a
+                      href={`${API_BASE}/api/samples/broken_surveillance_photo.bin`}
+                      download="broken_surveillance_photo.bin"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono transition-colors"
+                    >
+                      <Download className="w-3 h-3 text-[#39ff14]" />
+                      <span>Download</span>
+                    </a>
+                    <button
+                      onClick={() => handleLoadPreloadedRepair('broken_surveillance_photo.bin', 'png')}
+                      disabled={isLoading}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-[11px] font-mono font-semibold transition-all cursor-pointer"
+                    >
+                      <Wrench className="w-3 h-3" />
+                      <span>Repair</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Header Sample 2: JPEG */}
+                <div className="p-3.5 rounded-lg bg-[#12122a] border border-slate-700/40 hover:border-emerald-500/40 transition-all flex flex-col justify-between space-y-2.5">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#39ff14] font-mono truncate" title="corrupted_traffic_camera.bin">
+                        corrupted_traffic_camera.bin
+                      </span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 font-mono font-semibold">JPEG SPEC</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                      JPEG SOI marker wiped + illegal 0x00 quantization table values. AI patches baseline quantization &amp; JFIF header.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <a
+                      href={`${API_BASE}/api/samples/corrupted_traffic_camera.bin`}
+                      download="corrupted_traffic_camera.bin"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono transition-colors"
+                    >
+                      <Download className="w-3 h-3 text-[#39ff14]" />
+                      <span>Download</span>
+                    </a>
+                    <button
+                      onClick={() => handleLoadPreloadedRepair('corrupted_traffic_camera.bin', 'jpeg')}
+                      disabled={isLoading}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-[11px] font-mono font-semibold transition-all cursor-pointer"
+                    >
+                      <Wrench className="w-3 h-3" />
+                      <span>Repair</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Header Sample 3: SQLite */}
+                <div className="p-3.5 rounded-lg bg-[#12122a] border border-slate-700/40 hover:border-emerald-500/40 transition-all flex flex-col justify-between space-y-2.5">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#39ff14] font-mono truncate" title="corrupted_ledger.db">
+                        corrupted_ledger.db
+                      </span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 font-mono font-semibold">SQLITE SPEC</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                      100-byte SQLite v3 header destroyed with null bytes. AI reconstructs schema cookie, page size &amp; parses tables.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <a
+                      href={`${API_BASE}/api/samples/corrupted_ledger.db`}
+                      download="corrupted_ledger.db"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono transition-colors"
+                    >
+                      <Download className="w-3 h-3 text-[#39ff14]" />
+                      <span>Download</span>
+                    </a>
+                    <button
+                      onClick={() => handleLoadPreloadedRepair('corrupted_ledger.db', 'sqlite3')}
+                      disabled={isLoading}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-[11px] font-mono font-semibold transition-all cursor-pointer"
+                    >
+                      <Wrench className="w-3 h-3" />
+                      <span>Repair</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
