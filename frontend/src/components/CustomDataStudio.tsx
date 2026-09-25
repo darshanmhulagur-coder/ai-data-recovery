@@ -529,7 +529,40 @@ export const CustomDataStudio: React.FC<CustomDataStudioProps> = ({
                 Click <strong>"Download"</strong> to save the raw damaged file, or click <strong>"Repair Directly"</strong> to synthesize headers and preview the restored artifact immediately:
               </p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Header Sample 0: Minimal Corruption PNG (Only 8 Magic Bytes Wiped) */}
+                <div className="p-3.5 rounded-lg bg-[#12122a] border border-slate-700/40 hover:border-emerald-500/40 transition-all flex flex-col justify-between space-y-2.5">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-emerald-400 font-mono truncate" title="minimal_corrupted_evidence.png">
+                        minimal_corrupted.png
+                      </span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 font-mono font-semibold">8 BYTES WIPED</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                      Only 8 PNG magic bytes zeroed. 99.9% payload intact. AI patches the 8 bytes and resurrects the photo.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <a
+                      href={`${API_BASE}/api/samples/minimal_corrupted_evidence.png`}
+                      download="minimal_corrupted_evidence.png"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono transition-colors"
+                    >
+                      <Download className="w-3 h-3 text-[#39ff14]" />
+                      <span>Download</span>
+                    </a>
+                    <button
+                      onClick={() => handleLoadPreloadedRepair('minimal_corrupted_evidence.png', 'png')}
+                      disabled={isLoading}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-[11px] font-mono font-semibold transition-all cursor-pointer"
+                    >
+                      <Wrench className="w-3 h-3" />
+                      <span>Repair</span>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Header Sample 1: PNG */}
                 <div className="p-3.5 rounded-lg bg-[#12122a] border border-slate-700/40 hover:border-emerald-500/40 transition-all flex flex-col justify-between space-y-2.5">
                   <div>
