@@ -2,9 +2,27 @@ import React, { useState } from 'react';
 import { Upload, Plus, Trash2, FileText, Wrench, Sparkles, FolderUp, CheckCircle2, FileUp, RotateCcw, Download, FolderArchive, FileCode } from 'lucide-react';
 import type { FragmentItem } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_BASE !== undefined
-  ? import.meta.env.VITE_API_BASE
-  : (typeof window !== 'undefined' && window.location.port === '5173' ? 'http://127.0.0.1:8000' : '');
+const getApiBase = (): string => {
+  if (typeof window === 'undefined') return '';
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const envBase = (import.meta.env.VITE_API_BASE as string | undefined)?.trim();
+
+  // If in production on Vercel or any remote domain:
+  if (!isLocalhost) {
+    // If VITE_API_BASE was mistakenly configured with a localhost/127.0.0.1 URL, IGNORE it and use relative path
+    if (!envBase || envBase.includes('localhost') || envBase.includes('127.0.0.1')) {
+      return '';
+    }
+    return envBase.replace(/\/+$/, '');
+  }
+
+  // If in local development:
+  if (envBase) return envBase.replace(/\/+$/, '');
+  if (window.location.port === '5173') return 'http://127.0.0.1:8000';
+  return '';
+};
+
+const API_BASE = getApiBase();
 
 interface CustomDataStudioProps {
   onCustomFileUpload: (file: File) => void;
@@ -38,7 +56,10 @@ export const CustomDataStudio: React.FC<CustomDataStudioProps> = ({
 
   const handleLoadPreloadedEvidence = async (filename: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/samples/${filename}`);
+      let res = await fetch(`${API_BASE}/api/samples/${filename}`);
+      if (!res.ok) {
+        res = await fetch(`/samples/${filename}`);
+      }
       if (res.ok) {
         const blob = await res.blob();
         const file = new File([blob], filename);
@@ -52,7 +73,10 @@ export const CustomDataStudio: React.FC<CustomDataStudioProps> = ({
 
   const handleLoadPreloadedRepair = async (filename: string, formatHint: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/samples/${filename}`);
+      let res = await fetch(`${API_BASE}/api/samples/${filename}`);
+      if (!res.ok) {
+        res = await fetch(`/samples/${filename}`);
+      }
       if (res.ok) {
         const blob = await res.blob();
         const file = new File([blob], filename);

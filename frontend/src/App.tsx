@@ -17,9 +17,27 @@ import type {
 } from './types';
 import { Eye, ShieldCheck, Wrench, RotateCcw, ChevronDown, ChevronUp, FolderPlus } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_BASE !== undefined
-  ? import.meta.env.VITE_API_BASE
-  : (typeof window !== 'undefined' && window.location.port === '5173' ? 'http://127.0.0.1:8000' : '');
+const getApiBase = (): string => {
+  if (typeof window === 'undefined') return '';
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const envBase = (import.meta.env.VITE_API_BASE as string | undefined)?.trim();
+
+  // If in production on Vercel or any remote domain:
+  if (!isLocalhost) {
+    // If VITE_API_BASE was mistakenly configured with a localhost/127.0.0.1 URL, IGNORE it and use relative path
+    if (!envBase || envBase.includes('localhost') || envBase.includes('127.0.0.1')) {
+      return '';
+    }
+    return envBase.replace(/\/+$/, '');
+  }
+
+  // If in local development:
+  if (envBase) return envBase.replace(/\/+$/, '');
+  if (window.location.port === '5173') return 'http://127.0.0.1:8000';
+  return '';
+};
+
+const API_BASE = getApiBase();
 
 export function App() {
   const [scenarios, setScenarios] = useState<ScenarioMeta[]>([]);

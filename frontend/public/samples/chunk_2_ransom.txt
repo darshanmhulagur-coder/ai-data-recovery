@@ -1,0 +1,3 @@
+[2026-09-24 14:11:55] [OPERATOR_PHANTOM]: Disconnect is pointless. We have already encrypted 18TB of core database tables and exported financial audit records.
+[2026-09-24 14:12:30] [OPERATOR_PHANTOM]: Ransom escrow payment address (Bitcoin): bc1q9d47x7v5m0p2a8k49e38f9024q8w3r4t5y6u7i. Demand is 3.5 BTC within 24 hours.
+[2026-09-24 14:13:05] [VICTIM_INCIDENT_REP]: We need cryptographic verification that our master decryption keys are recoverable before management approves payment.

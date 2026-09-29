@@ -1,8 +1,35 @@
 import re
 import math
 from typing import List, Dict, Any, Tuple
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+try:
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    SKLEARN_AVAILABLE = True
+except (ImportError, Exception):
+    SKLEARN_AVAILABLE = False
+
+def _pure_python_ngram_cosine(text_a: str, text_b: str) -> float:
+    """Fallback character n-gram cosine similarity when scikit-learn is unavailable."""
+    def get_char_ngrams(s: str) -> Dict[str, int]:
+        ngrams: Dict[str, int] = {}
+        s_clean = s.lower()
+        for n in (1, 2, 3):
+            for i in range(max(0, len(s_clean) - n + 1)):
+                gram = s_clean[i:i+n]
+                ngrams[gram] = ngrams.get(gram, 0) + 1
+        return ngrams
+
+    vec_a = get_char_ngrams(text_a)
+    vec_b = get_char_ngrams(text_b)
+    all_keys = set(vec_a.keys()) | set(vec_b.keys())
+    if not all_keys:
+        return 0.0
+    dot_prod = sum(vec_a.get(k, 0) * vec_b.get(k, 0) for k in all_keys)
+    norm_a = math.sqrt(sum(v * v for v in vec_a.values()))
+    norm_b = math.sqrt(sum(v * v for v in vec_b.values()))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return float(dot_prod / (norm_a * norm_b))
 
 def extract_timestamps(text: str) -> List[str]:
     """Finds ISO/standard forensic timestamps in text fragments."""
@@ -34,16 +61,21 @@ def calculate_boundary_affinity(frag_a: str, frag_b: str) -> Tuple[float, str]:
     base_score = 0.40  # Neutral baseline
 
     # 1. Semantic N-gram / TF-IDF Affinity between tail_a and head_b
-    try:
-        vectorizer = TfidfVectorizer(ngram_range=(1, 3), analyzer="char_wb", min_df=1)
-        tfidf_matrix = vectorizer.fit_transform([tail_a, head_b])
-        cos_sim = float(cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0])
-        semantic_boost = cos_sim * 0.35
-        base_score += semantic_boost
-        if cos_sim > 0.3:
-            reasons.append(f"High vocabulary/n-gram continuity ({cos_sim*100:.1f}%)")
-    except Exception:
-        cos_sim = 0.0
+    cos_sim = 0.0
+    if SKLEARN_AVAILABLE:
+        try:
+            vectorizer = TfidfVectorizer(ngram_range=(1, 3), analyzer="char_wb", min_df=1)
+            tfidf_matrix = vectorizer.fit_transform([tail_a, head_b])
+            cos_sim = float(cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0])
+        except Exception:
+            cos_sim = _pure_python_ngram_cosine(tail_a, head_b)
+    else:
+        cos_sim = _pure_python_ngram_cosine(tail_a, head_b)
+
+    semantic_boost = cos_sim * 0.35
+    base_score += semantic_boost
+    if cos_sim > 0.3:
+        reasons.append(f"High vocabulary/n-gram continuity ({cos_sim*100:.1f}%)")
 
     # 2. Timestamp Monotonicity Check
     ts_a = extract_timestamps(frag_a)

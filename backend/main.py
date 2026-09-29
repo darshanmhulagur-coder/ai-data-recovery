@@ -3,11 +3,13 @@ import base64
 import sqlite3
 import tempfile
 import os
+import zipfile
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, FileResponse
 from pydantic import BaseModel
+from PIL import Image, ImageDraw
 
 from core.carver import calculate_shannon_entropy, calculate_byte_frequency_histogram, classify_block, analyze_stream_sectors
 from core.stitcher import solve_fragment_puzzle
@@ -30,17 +32,21 @@ from core.demo_data import (
 app = FastAPI(
     title="ForensiX-AI API",
     description="Intelligent Forensic Carving & Evidence Reconstruction Engine",
-    version="1.0.0"
+    version="1.0.0",
+    redirect_slashes=False
 )
 
-# Enable CORS for Vite frontend dev server and local network
+# Standard compliant CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"]
 )
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 class StitchRequest(BaseModel):
     fragments: List[Dict[str, Any]]
@@ -54,7 +60,10 @@ class TriageRequest(BaseModel):
     content: str
     is_structural_valid: Optional[bool] = True
 
-@app.get("/api/status")
+router = APIRouter()
+
+@router.get("/status")
+@router.get("/health")
 def get_system_status():
     return {
         "status": "ONLINE",
@@ -70,12 +79,13 @@ def get_system_status():
         "ready_for_demo": True
     }
 
-@app.get("/api/scenarios")
+@router.get("/scenarios")
+@router.get("/demo-scenarios")
 def list_scenarios():
     """Lists pre-loaded deterministic demo scenarios."""
     return get_all_scenarios()
 
-@app.get("/api/scenarios/{scenario_id}")
+@router.get("/scenarios/{scenario_id}")
 def load_scenario(scenario_id: str):
     """Fetches full payload for a specific demo scenario."""
     if scenario_id == "case_1_fragmented_leaks":
@@ -87,7 +97,8 @@ def load_scenario(scenario_id: str):
     else:
         raise HTTPException(status_code=404, detail="Scenario not found")
 
-@app.post("/api/scan-raw")
+@router.post("/scan-raw")
+@router.post("/analyze-stream")
 async def scan_raw_evidence(
     file: Optional[UploadFile] = File(None),
     raw_b64: Optional[str] = Form(None)
@@ -128,7 +139,8 @@ async def scan_raw_evidence(
         "sector_map": sector_analysis
     }
 
-@app.post("/api/stitch")
+@router.post("/stitch")
+@router.post("/stitch-fragments")
 def stitch_fragments(req: StitchRequest):
     """
     Takes an array of disordered / non-contiguous text fragments,
@@ -155,7 +167,8 @@ def stitch_fragments(req: StitchRequest):
         "integrity": integrity
     }
 
-@app.post("/api/repair")
+@router.post("/repair")
+@router.post("/repair-header")
 def repair_header(req: RepairRequest):
     """
     Identifies corrupted file format, injects specification-compliant headers,
@@ -192,7 +205,6 @@ def repair_header(req: RepairRequest):
     # For text/SQLite or extracted entities
     triage_info = None
     if meta.get("format") == "SQLite3":
-        # Extract rows from repaired sqlite
         triage_info = extract_sqlite_records(repaired_bytes)
 
     return {
@@ -247,7 +259,7 @@ def extract_sqlite_records(db_bytes: bytes) -> Dict[str, Any]:
             "error": str(e)
         }
 
-@app.post("/api/triage")
+@router.post("/triage")
 def triage_content(req: TriageRequest):
     """Runs IOC extraction and calculates forensic integrity score on text content."""
     entities = extract_forensic_entities(req.content)
@@ -262,33 +274,123 @@ def triage_content(req: TriageRequest):
         "integrity": integrity
     }
 
-import zipfile
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-@app.get("/api/samples/{filename}")
-def download_sample_file(filename: str):
-    """Allows investigators to download sample corrupted/raw evidence files."""
+def get_sample_bytes(filename: str) -> Optional[bytes]:
+    """
+    Resolves sample evidence bytes from filesystem or dynamically generates
+    them in memory. Guarantees samples always exist in serverless environments.
+    """
     safe_name = os.path.basename(filename)
+
+    # 1. Search candidate locations on disk
     candidates = [
         os.path.join(ROOT_DIR, safe_name),
-        os.path.join(ROOT_DIR, "sample_fragments", safe_name)
+        os.path.join(ROOT_DIR, "sample_fragments", safe_name),
+        os.path.join(ROOT_DIR, "frontend", "public", "samples", safe_name),
+        os.path.join(ROOT_DIR, "frontend", "dist", "samples", safe_name),
+        os.path.join(os.getcwd(), safe_name),
+        os.path.join(os.getcwd(), "sample_fragments", safe_name),
+        os.path.join(os.getcwd(), "frontend", "public", "samples", safe_name),
+        os.path.join(os.getcwd(), "frontend", "dist", "samples", safe_name),
     ]
     for path in candidates:
         if os.path.exists(path) and os.path.isfile(path):
-            return FileResponse(
-                path,
-                filename=safe_name,
-                media_type="application/octet-stream",
-                headers={"Content-Disposition": f'attachment; filename="{safe_name}"'}
-            )
-    raise HTTPException(status_code=404, detail="Sample evidence file not found")
+            try:
+                with open(path, "rb") as f:
+                    return f.read()
+            except Exception:
+                pass
 
-@app.get("/api/download-all-samples")
+    # 2. Dynamic in-memory generator fallback for Vercel/serverless environments
+    if "minimal_corrupted" in safe_name:
+        # Minimal 8-byte magic header wiped PNG
+        raw_png = create_evidence_image_bytes()
+        arr = bytearray(raw_png)
+        for i in range(min(8, len(arr))):
+            arr[i] = 0x00
+        return bytes(arr)
+
+    elif "broken_surveillance" in safe_name or "missing_header" in safe_name:
+        # 33-byte header & IHDR chunk wiped PNG
+        raw_png = create_evidence_image_bytes()
+        arr = bytearray(raw_png)
+        for i in range(min(33, len(arr))):
+            arr[i] = 0x00
+        return bytes(arr)
+
+    elif "clean_reference" in safe_name:
+        return create_evidence_image_bytes()
+
+    elif "ledger" in safe_name or "sqlite" in safe_name.lower():
+        scenario = get_corrupted_sqlite_scenario()
+        return base64.b64decode(scenario["corrupted_b64"])
+
+    elif "traffic_camera" in safe_name:
+        try:
+            im = Image.new("RGB", (480, 320), color=(20, 30, 48))
+            draw = ImageDraw.Draw(im)
+            draw.rectangle([(20, 20), (460, 300)], fill=(30, 41, 59), outline=(244, 63, 94))
+            draw.text((40, 50), "[TRAFFIC CAM #402 - RED LIGHT INFRACTION]", fill=(244, 63, 94))
+            draw.text((40, 80), "TIMESTAMP: 2026-09-24 14:02:11", fill=(255, 255, 255))
+            buf = io.BytesIO()
+            im.save(buf, format="JPEG", quality=85)
+            jpg_bytes = bytearray(buf.getvalue())
+            for i in range(min(16, len(jpg_bytes))):
+                jpg_bytes[i] = 0x00
+            return bytes(jpg_bytes)
+        except Exception:
+            return b"\x00" * 512
+
+    elif "evidence_disk_stream" in safe_name:
+        png_sample = create_evidence_image_bytes()[:1024]
+        chat_sample = (
+            b"[2026-09-24 14:00:01] SECTOR DUMP: THREAT_INTEL_STREAM\n"
+            b"IP: 198.51.100.45 PORT: 4444 STATUS: COMPROMISED\n"
+        )
+        return (chat_sample * 8)[:2048] + png_sample + (b"\x00" * 1024)
+
+    elif "dvr_capture" in safe_name:
+        return b"\x00" * 64 + b"H264_STREAM_CARVED_METRIC_DATA" * 100
+
+    elif safe_name.startswith("chunk_1"):
+        return (
+            "[2026-09-24 14:00:12] [OPERATOR_SHADOW]: Establishing persistence across cluster 0x8F...\n"
+            "[2026-09-24 14:01:45] [TARGET_SEC_TEAM]: Warning: Unauthorized memory dump detected on DB-PRIMARY-01."
+        ).encode("utf-8")
+
+    elif safe_name.startswith("chunk_2"):
+        return (
+            "[2026-09-24 14:03:15] [OPERATOR_SHADOW]: Logging won't help. We have already exfiltrated 42GB of confidential financial records and customer telemetry.\n"
+            "[2026-09-24 14:03:50] [OPERATOR_SHADOW]: Payment escrow wallet (Bitcoin): bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq. Ransom demand is 2.5 BTC within 48 hours."
+        ).encode("utf-8")
+
+    elif safe_name.startswith("chunk_3"):
+        return (
+            "[2026-09-24 14:04:22] [TARGET_SEC_TEAM]: Can you provide cryptographic proof of file possession before we authorize transfer?\n"
+            "[2026-09-24 14:04:58] [OPERATOR_SHADOW]: Sample decrypt key: sk-live-94a8f10283bd78a2e1094ba98c1192fa. Check verification proof at onion site: http://shadowleak7x49v2a1p9e0.onion/verify."
+        ).encode("utf-8")
+
+    return None
+
+@router.get("/samples/{filename}")
+def download_sample_file(filename: str):
+    """Allows investigators to download sample corrupted/raw evidence files."""
+    data = get_sample_bytes(filename)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Sample evidence file not found")
+    safe_name = os.path.basename(filename)
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'}
+    )
+
+@router.get("/download-all-samples")
 def download_all_samples():
     """Generates an in-memory zip archive with all evidence samples for 1-click download."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zipf:
         sample_files = [
+            "minimal_corrupted_evidence.png",
             "evidence_disk_stream.raw",
             "corrupted_dvr_capture.bin",
             "broken_surveillance_photo.bin",
@@ -296,17 +398,20 @@ def download_all_samples():
             "corrupted_traffic_camera.bin"
         ]
         for f in sample_files:
-            p = os.path.join(ROOT_DIR, f)
-            if os.path.exists(p):
-                zipf.write(p, arcname=f"1_Upload_File_Disk_Stream/{f}")
-                zipf.write(p, arcname=f"2_Corrupted_Header_Repair/{f}")
+            content = get_sample_bytes(f)
+            if content:
+                zipf.writestr(f"1_Upload_File_Disk_Stream/{f}", content)
+                zipf.writestr(f"2_Corrupted_Header_Repair/{f}", content)
 
-        frag_dir = os.path.join(ROOT_DIR, "sample_fragments")
-        if os.path.exists(frag_dir):
-            for f in os.listdir(frag_dir):
-                fp = os.path.join(frag_dir, f)
-                if os.path.isfile(fp):
-                    zipf.write(fp, arcname=f"3_Fragment_Chunks/{f}")
+        fragments = [
+            "chunk_1_breach.txt",
+            "chunk_2_ransom.txt",
+            "chunk_3_decrypt_onion.txt"
+        ]
+        for f in fragments:
+            content = get_sample_bytes(f)
+            if content:
+                zipf.writestr(f"3_Fragment_Chunks/{f}", content)
 
     buf.seek(0)
     return Response(
@@ -315,13 +420,17 @@ def download_all_samples():
         headers={"Content-Disposition": 'attachment; filename="ForensiX_Evidence_Samples.zip"'}
     )
 
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+# Include API router with BOTH /api prefix AND root prefix to handle any Vercel rewrite variation
+app.include_router(router, prefix="/api")
+app.include_router(router)
 
-# Mount frontend/dist if built
+# Mount frontend/dist if built (for local standalone server execution)
 frontend_dist_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist")
 if os.path.exists(frontend_dist_path):
-    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist_path, "assets")), name="assets")
+    assets_dir = os.path.join(frontend_dist_path, "assets")
+    if os.path.exists(assets_dir):
+        from fastapi.staticfiles import StaticFiles
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
     @app.get("/")
     def serve_frontend_root():
@@ -329,6 +438,9 @@ if os.path.exists(frontend_dist_path):
 
     @app.get("/{full_path:path}")
     async def catch_all_frontend(full_path: str):
+        # Never return HTML for API requests
+        if full_path.startswith("api/") or full_path == "api":
+            raise HTTPException(status_code=404, detail=f"API endpoint /{full_path} not found")
         file_path = os.path.join(frontend_dist_path, full_path)
         if os.path.exists(file_path) and os.path.isfile(file_path):
             return FileResponse(file_path)

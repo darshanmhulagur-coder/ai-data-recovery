@@ -1,0 +1,3 @@
+[2026-09-24 14:13:40] [OPERATOR_PHANTOM]: Master decrypt proof token: sk-live-89f41029c04b82d77a019e482b8109d3.
+[2026-09-24 14:14:15] [OPERATOR_PHANTOM]: Decryption verification portal accessible on Tor network: http://phantomrecovery7x89v2a.onion/verify.
+[2026-09-24 14:14:50] [VICTIM_INCIDENT_REP]: Token accepted by local test harness. We are routing transaction through custody escrow.
