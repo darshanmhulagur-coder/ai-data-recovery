@@ -3,7 +3,7 @@
   "outputDirectory": "frontend/dist",
   "functions": {
     "api/**/*.py": {
-      "includeFiles": "*.bin,*.png,*.raw,*.db,sample_fragments/**,frontend/public/samples/**"
+      "excludeFiles": "{frontend/**,node_modules/**,sample_fragments/**,*.bin,*.png,*.raw,*.db,*.md,*.bat}"
     }
   },
   "rewrites": [
